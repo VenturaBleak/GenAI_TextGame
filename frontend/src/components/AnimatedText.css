@@ -1,0 +1,20 @@
+.animated-text {
+  font-family: 'Courier New', monospace;
+  font-size: 16px;
+  color: #0F0;
+  white-space: pre-wrap;
+  line-height: 1.4;
+  text-shadow: 0 0 5px #0F0;
+}
+
+.blinking-cursor {
+  color: #fff;
+  display: inline-block;
+  animation: flicker 2s infinite;
+}
+
+@keyframes flicker {
+  0%   { opacity: 1; }
+  50%  { opacity: 0.1; }
+  100% { opacity: 1; }
+}
