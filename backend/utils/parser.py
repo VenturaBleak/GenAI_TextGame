@@ -113,3 +113,40 @@ def parse_round_response(response: str) -> dict:
         {"id": 2, "choice_description": action2, "confirming_sentence": action2_confirm, "outcome": "negative"}
     ]
     return {"situation": situation, "choices": choices}
+
+def parse_final_wrapping(response: str) -> str:
+    """
+    Extracts the final wrapping from the Gemini response.
+
+    Expected format:
+      FINAL WRAPPING: <final narrative wrapping>
+
+    Returns:
+        str: The extracted final wrapping.
+
+    Raises:
+        ValueError: If the response does not contain the expected "FINAL WRAPPING:" line.
+    """
+    import re
+
+    pattern = (
+        r"SITUATION:\s*(.*?)\s*\n"
+    )
+
+    match = re.search(pattern, response, re.DOTALL | re.MULTILINE | re.IGNORECASE)
+
+
+    if match:
+        situation = match.group(1).strip()
+    else:
+        expected_format = (
+            "Expected format:\n"
+            "  SITUATION: <vivid description of the new situation>\n"
+        )
+        raise ValueError(
+            "Round response error: missing required fields.\n"
+            f"{expected_format}\n"
+            "Received:\n"
+            f"{response}"
+        )
+    return situation

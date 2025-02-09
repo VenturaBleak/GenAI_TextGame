@@ -20,7 +20,7 @@ import './App.css';
 const App = () => {
   // REACT_APP_BACKEND_URL is set at build time (via Docker Compose) and injected into the code.
   const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
-  const initialMessage = "Follow the white rabbit.";
+  const initialMessage = "Follow the white rabbit. \n\n";
 
   const {
     immediateNarrative,

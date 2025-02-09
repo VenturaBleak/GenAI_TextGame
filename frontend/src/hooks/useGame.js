@@ -33,6 +33,7 @@ export const useGame = (initialMessage, backendUrl) => {
   const [endGameThreshold, setEndGameThreshold] = useState(5);
   // Tracks whether the game has begun (i.e. the user clicked "Follow")
   const [hasStarted, setHasStarted] = useState(false);
+  const [queuedResponse, setQueuedResponse] = useState(null);
 
   /**
    * Processes the backend response.
@@ -45,27 +46,21 @@ export const useGame = (initialMessage, backendUrl) => {
    *
    * @param {Object} data - The JSON response from the backend.
    */
-  const handleResponse = (data) => {
-  if (data.current_round && data.current_round.situation) {
-    // We now only want to animate the new situation text (Type 3).
-    const newSituation = data.current_round.situation.trim();
-    // Set the animated segment to the new situation plus an extra newline.
-    setAnimatedSegment(newSituation + "\n");
-  } else {
-    // Fallback: if there is no current round (should not normally occur), use the difference.
-    const fullNarrative = data.narrative_context;
-    let newText = fullNarrative.substring(immediateNarrative.length).trim();
-    setAnimatedSegment(newText + "\n");
-  }
+   const handleResponse = (data) => {
+    // Do not overwrite the local narrative, because chooseOption already appended the immediate update.
+    // Instead, compute the new segment as the difference between the backend's narrative_context and the current printed narrative.
+    const newSegment = (data.current_round.situation + "\n");
+    // Set the animated segment to the new text (ensuring a newline at the end).
+    setAnimatedSegment(prev => prev + newSegment);
 
-  // Update additional game state.
-  setChoices(data.current_round ? shuffleArray(data.current_round.choices) : []);
-  setGameOver(data.game_over);
-  setScore(data.score);
-  setEndGameThreshold(data.end_game_threshold || 5);
-  setAnimationInProgress(true);
-  setTextAnimationComplete(false);
-};
+    // Update additional game state.
+    setChoices(data.current_round ? shuffleArray(data.current_round.choices) : []);
+    setGameOver(data.game_over);
+    setScore(data.score);
+    setEndGameThreshold(data.end_game_threshold || 5);
+    setAnimationInProgress(true);
+    setTextAnimationComplete(false);
+  };
 
   /**
    * Initiates the game by calling the backend /api/start endpoint.
@@ -105,16 +100,14 @@ export const useGame = (initialMessage, backendUrl) => {
 
   // Construct the immediate update text with the desired order:
   // First, print the decision made (the choice text),
-  // then a blank line, then "PLAYER CHOICE: " plus the confirming sentence,
-  // and finally another blank line.
+  // then a blank line, then the confirming sentence.
   const immediateUpdate =
     "\n" +
     "DECISION MADE: " + selectedChoice.choice_description + "\n\n" +
-    selectedChoice.confirming_sentence + "\n";
+    selectedChoice.confirming_sentence + "\n\n";
 
-  // Instead of appending directly to immediateNarrative,
-  // set this update as the animated segment so that it is animated.
-  setAnimatedSegment(immediateUpdate);
+  // Append the immediate update to the animated segment so it is animated.
+  setAnimatedSegment(prev => prev + immediateUpdate);
 
   // Clear the current choices so they disappear immediately.
   setChoices([]);
@@ -126,8 +119,13 @@ export const useGame = (initialMessage, backendUrl) => {
   try {
     // Now trigger the API call in parallel.
     const data = await api.chooseOption(backendUrl, choiceOutcome);
-    // When the API call completes, process and animate the new narrative.
-    handleResponse(data);
+    // If the immediate update animation is still in progress, queue the response;
+    // otherwise, process it immediately.
+    if (animationInProgress) {
+      setQueuedResponse(data);
+    } else {
+      handleResponse(data);
+    }
   } catch (error) {
     console.error("Error processing choice:", error);
     setAnimationInProgress(false);
@@ -138,13 +136,18 @@ export const useGame = (initialMessage, backendUrl) => {
  * Called when the animated text (Type 3) has finished its animation.
  * The animated segment is then appended to the immediate narrative.
  */
-const handleAnimationComplete = () => {
-  // Append animated text and then add an extra newline (blank line) at the end.
-  setImmediateNarrative(prev => prev + (animatedSegment ? '\n' + animatedSegment : '') + "\n");
-  setAnimatedSegment("");
-  setTextAnimationComplete(true);
-  setAnimationInProgress(false);
-};
+  const handleAnimationComplete = () => {
+    setImmediateNarrative(prev => prev + animatedSegment);
+    setAnimatedSegment("");
+    setTextAnimationComplete(true);
+    setAnimationInProgress(false);
+    // If there is a queued API response, process it now.
+    if (queuedResponse) {
+      const data = queuedResponse;
+      setQueuedResponse(null);
+      handleResponse(data);
+    }
+  };
 
   /**
    * Resets the game state to its initial values.

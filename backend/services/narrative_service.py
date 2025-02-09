@@ -28,7 +28,7 @@ Guardrails:
 """
 
 from services.gemini_service import call_gemini
-from utils.parser import parse_round_response, parse_initial_setting
+from utils.parser import parse_round_response, parse_initial_setting, parse_final_wrapping
 from utils.debug import debug_print_gemini
 
 def generate_first_round_context() -> dict:
@@ -92,18 +92,23 @@ def generate_round_context(narrative_context: str, action: str = "Initial narrat
     debug_print_gemini(prompt, raw_response, parsed_data)
     return parsed_data
 
-def generate_final_wrapping(narrative_context: str, final_score: int) -> str:
+def generate_final_wrapping(narrative_context: str, win_or_loss: str) -> str:
     prompt = (
         "You are a master storyteller concluding a dramatic tale. "
         "Below is the complete narrative so far:\n\n"
         f"{narrative_context}\n\n"
-        "Now deliver a fast-paced, emotionally charged ending that acknowledges the player's role in every twist. "
-        "The conclusion should be a crescendo of tension, revealing the full impact of the player's choices. "
-        "End with a final, powerful image that leaves the player breathless and eager for more. "
-        "Depending on the final score, the ending should be either a triumphant climax or a devastating fall from grace. "
+        f"The player has reached the end of the story. The player has achieved a win or a loss: {win_or_loss}\n\n"
+        "Depending on whether its a win or a loss, your objective is to deliver a fast-paced, emotionally charged ending"
+        "Keep it rough, gritty, and immersive—appealing to raw instincts and deep emotions. "
+        "Let innocence, fear, guilt, love, hate, and desire collide, depending on the outcome of the choices. "
+        "End with a final, powerful image that leaves the player breathless. "
         "Don't hold back in brutality, brutal honesty and raw emotion.\n\n"
+        "Output must strictly follow this format:\n\n"
+        "CONFIRMING SENTENCE: <Present-tense confirming sentence>\n"
+        "SITUATION: <Vivid description of the new situation>\n"
     )
     raw_response = call_gemini(prompt)
+    parsed_data = parse_final_wrapping(raw_response)
     # Print Gemini-specific debug info.
-    debug_print_gemini(prompt, raw_response, raw_response)
+    debug_print_gemini(prompt, raw_response, parsed_data)
     return raw_response

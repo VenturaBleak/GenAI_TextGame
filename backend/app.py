@@ -150,14 +150,17 @@ def choose(choice_request: ChoiceRequest):
     })
 
     if abs(game_state.score) >= END_GAME_THRESHOLD:
-        final_text = generate_final_wrapping(game_state.narrative_context, game_state.score)
+        win_or_loss = "WIN" if game_state.score >= END_GAME_THRESHOLD else "LOSS"
+        final_text = generate_final_wrapping(game_state.narrative_context, win_or_loss)
         game_state.narrative_context += "\n" + final_text
+
         return {
             "status": "Game Over",
             "narrative_context": game_state.narrative_context,
             "score": game_state.score,
             "game_over": True,
-            "end_game_threshold": END_GAME_THRESHOLD
+            "end_game_threshold": END_GAME_THRESHOLD,
+            "win_or_loss": win_or_loss
         }
     else:
         return {
