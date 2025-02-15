@@ -1,114 +1,143 @@
-"""
-services/narrative_service.py
-
-Purpose:
-    Provides services for generating narrative rounds and the final wrapping.
-    This module constructs prompts (based on the current narrative context and user choice),
-    calls the Gemini API, parses the response (using the parser utility), and returns structured data for the game round.
-
-Inputs:
-    - For generate_round_context:
-         narrative_context (str): The current narrative context.
-         action (str): The action chosen by the player (default "Initial narrative").
-         outcome_value (int): The score delta associated with the action.
-         action_confirming_sentence (str): An optional confirming sentence.
-    - For generate_final_wrapping:
-         narrative_context (str): The complete narrative so far.
-         final_score (int): The final score.
-
-Outputs:
-    - For generate_round_context: A dictionary containing:
-         "situation": The new situation description.
-         "choices": A list of two choice objects (each with id, choice_description, action_confirming_sentence, and outcome).
-    - For generate_final_wrapping: A string representing the final narrative wrapping.
-
-Guardrails:
-    - Prompts are constructed to adhere strictly to the expected format.
-    - The Gemini API response is parsed using the parser utility.
-"""
-
+import os
+import json
 from services.gemini_service import call_gemini
-from utils.parser import parse_round_response, parse_initial_setting, parse_final_wrapping
-from utils.debug import debug_print_gemini
+from utils.parser import parse_narrative_response
 
-def generate_first_round_context() -> dict:
-    prompt = (
-        "You are a master storyteller in a dark, dystopian world. "
-        "Your goal is to captivate the player instantly. Begin with the command: 'Follow the white rabbit.' "
-        "Address the player directly, pulling them into the setting with an immediate sense of urgency and intrigue. "
-        "Describe the world vividly—concrete, atmospheric, and immersive. "
-        "Focus on sensory details: what the player sees, hears, feels, or even smells. "
-        "The setting should feel alive, oppressive, or mysterious, drawing the player deeper into the experience. "
-        "Avoid unnecessary exposition or explanations. Let the world speak for itself through raw, evocative imagery."
-        "Then, provide two distinct action options for the player to choose from, each with a confirming sentence. "
-        "Make the choices tough, include moral dilemmas, and unexpected yet realistic twists to keep the player engaged."
-        "KEEP IT SHORT, CONCISE, FAST-PACED, AND ENGAGING WITH ENOUGH CONTEXT TO BE SELF-EXPLANATORY / RELATABLE.!"
-        "\n""\n"
-        "Output strictly in the following format, these and nothing else:\n"
-        "SITUATION: Follow the white rabbit. <Short, gripping description of the context and situation>\n"
-        "ACTION 1: <First action option>\n"
-        "ACTION 1 CONFIRM: <Confirming sentence for action 1>\n"
-        "ACTION 2: <Second action option>\n"
-        "ACTION 2 CONFIRM: <Confirming sentence for action 2>\n"
-        "Each CONFIRM sentence should be written in the present tense, e.g., "
-        "'You decide to stop moving and feign interest in the old advertisement to your right.' "
-    )
+# Load prompt templates and regex patterns from the JSON configuration file.
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'prompts.json')
+with open(CONFIG_PATH, 'r') as f:
+    PROMPT_CONFIG = json.load(f)
+
+def generate_narrative(
+    stage: str,
+    narrative_context: str = "",
+    action: str = "",
+    outcome_value: int = 0,
+    action_confirming_sentence: str = "",
+    win_or_loss: str = ""
+) -> dict:
+    """
+    Unified narrative generator function.
+
+    This function calls the Gemini API to generate narrative content based on the stage
+    of the narrative, then parses the output ensuring it conforms to a predefined format.
+
+    Arguments (mutually exclusive rules):
+        - stage (str): Must be one of "initial", "round", or "final".
+            * "initial": Uses the first round prompt. **No additional parameters are required**.
+            * "round": Uses the round prompt. Requires:
+                - narrative_context (str): The current narrative context (can be blank).
+                - action (str): The player's chosen action (can be blank).
+                - outcome_value (int): The numeric outcome associated with the action.
+                - action_confirming_sentence (str): The confirming sentence for the action.
+              **Parameter win_or_loss is ignored.**
+            * "final": Uses the final wrapping prompt. Requires:
+                - narrative_context (str): The complete narrative context.
+                - win_or_loss (str): Either "win" or "loss" (case-insensitive).
+              **Parameters action, outcome_value, and action_confirming_sentence are ignored.**
+
+    Expected Output Format:
+
+        For "initial" stage:
+            {
+                "situation": <str>,  // Vivid description after "Follow the white rabbit."
+                "choices": [
+                    {
+                        "id": 1,
+                        "choice_description": <str>, // Description for action option 1.
+                        "confirming_sentence": <str>, // Confirming sentence for action 1.
+                        "outcome": "positive"
+                    },
+                    {
+                        "id": 2,
+                        "choice_description": <str>, // Description for action option 2.
+                        "confirming_sentence": <str>, // Confirming sentence for action 2.
+                        "outcome": "negative"
+                    }
+                ]
+            }
+
+        For "round" stage:
+            {
+                "confirming_sentence": <str>, // The initial confirming sentence.
+                "situation": <str>,           // Vivid description of the new situation.
+                "choices": [
+                    {
+                        "id": 1,
+                        "choice_description": <str>,
+                        "confirming_sentence": <str>,
+                        "outcome": "positive"
+                    },
+                    {
+                        "id": 2,
+                        "choice_description": <str>,
+                        "confirming_sentence": <str>,
+                        "outcome": "negative"
+                    }
+                ]
+            }
+
+        For "final" stage:
+            {
+                "confirming_sentence": <str>, // The final confirming sentence.
+                "situation": <str>            // Vivid description of the final situation.
+            }
+
+    Self-explanatory and mutually exclusive rules:
+        - For "initial", do not supply narrative_context, action, outcome_value, action_confirming_sentence, or win_or_loss.
+        - For "round", win_or_loss is ignored.
+        - For "final", only narrative_context and win_or_loss are used; other parameters are ignored.
+
+    Returns:
+        dict: Parsed narrative data conforming to the above format.
+    """
+    # Map stage to the corresponding config key.
+    if stage == "initial":
+        config_key = "first_round_context"
+    elif stage == "round":
+        config_key = "round_context"
+    elif stage == "final":
+        config_key = "final_wrapping"
+    else:
+        raise ValueError("Invalid stage. Must be one of 'initial', 'round', or 'final'.")
+
+    prompt_template = PROMPT_CONFIG[config_key]["prompt"]
+    regex_pattern = PROMPT_CONFIG[config_key]["regex"]
+
+    # Format the prompt based on the stage.
+    if stage == "initial":
+        prompt = prompt_template
+    elif stage == "round":
+        prompt = prompt_template.format(
+            narrative_context=narrative_context,
+            action=action,
+            outcome_value=outcome_value,
+            action_confirming_sentence=action_confirming_sentence
+        )
+    elif stage == "final":
+        prompt = prompt_template.format(
+            narrative_context=narrative_context,
+            win_or_loss=win_or_loss
+        )
+    
+    # Call the Gemini API.
     raw_response = call_gemini(prompt)
-    # Parse the initial setting into a dictionary.
-    parsed_data = parse_initial_setting(raw_response)
-    # Parse the round response into a dictionary.
-    debug_print_gemini(prompt, raw_response, parsed_data)
+    
+    # Parse the raw response using the unified parser (with the provided regex pattern).
+    parsed_data = parse_narrative_response(raw_response, stage, regex_pattern)
+
+    # Assertions to ensure the parsed output is in the predefined format.
+    if stage in ("initial", "round"):
+        assert "situation" in parsed_data, "Parsed narrative missing 'situation'"
+        assert "choices" in parsed_data, "Parsed narrative missing 'choices'"
+        assert isinstance(parsed_data["choices"], list) and len(parsed_data["choices"]) == 2, "Expected exactly two choices"
+        for choice in parsed_data["choices"]:
+            assert "id" in choice, "Choice missing 'id'"
+            assert "choice_description" in choice, "Choice missing 'choice_description'"
+            assert "confirming_sentence" in choice, "Choice missing 'confirming_sentence'"
+            assert "outcome" in choice, "Choice missing 'outcome'"
+    elif stage == "final":
+        assert "confirming_sentence" in parsed_data, "Parsed final narrative missing 'confirming_sentence'"
+        assert "situation" in parsed_data, "Parsed final narrative missing 'situation'"
+
     return parsed_data
-
-def generate_round_context(narrative_context: str, action: str = "Initial narrative",
-                           outcome_value: int = 0, action_confirming_sentence: str = "") -> dict:
-    prompt = (
-        "You are a creative storyteller. Below is the current narrative context:\n"
-        f"{narrative_context}\n\n"
-        "The player has chosen the following action:\n"
-        f"Action: {action}\nOutcome: {outcome_value:+d}\n"
-        f"LATEST CONFIRMING SENTENCE: {action_confirming_sentence}\n\n"
-        "Now, generate a present-tense narrative that directly starts with the LATEST CONFIRMING SENTENCE,following the player's decision. "
-        "Make sure to make the player feel the consequences of their choice. Make the world feel alive and reactive to the player's actions. "
-        "Make the choices tough, include moral dilemmas, and unexpected yet realistic twists to keep the player engaged. "
-        "Keep it rough, gritty, and immersive—appealing to raw instincts and deep emotions. "
-        "Let innocence, fear, guilt, love, hate, and desire collide, depending on the outcome of the choice. "
-        "The player should be forced to confront the weight of their choice in real time."
-        "KEEP IT SHORT, CONCISE, FAST-PACED, AND ENGAGING WITH ENOUGH CONTEXT TO BE SELF-EXPLANATORY / RELATABLE.!"
-        "\n\n"
-        "Output must strictly follow this format:\n\n"
-        "CONFIRMING SENTENCE: <Present-tense confirming sentence>\n"
-        "SITUATION: <Vivid description of the new situation>\n"
-        "ACTION 1: <First action option>\n"
-        "ACTION 1 CONFIRM: <Confirming sentence for action 1>\n"
-        "ACTION 2: <Second action option>\n"
-        "ACTION 2 CONFIRM: <Confirming sentence for action 2>\n"
-        "As an example, the CONFIRMATION line should be written in the present tense, e.g., "
-        "'You decide to stop moving and feign interest in the old advertisement to your right.'\n\n"
-    )
-    raw_response = call_gemini(prompt)
-    parsed_data = parse_round_response(raw_response)
-    # Print Gemini-specific debug info.
-    debug_print_gemini(prompt, raw_response, parsed_data)
-    return parsed_data
-
-def generate_final_wrapping(narrative_context: str, win_or_loss: str) -> str:
-    prompt = (
-        "You are a master storyteller concluding a dramatic tale. "
-        "Below is the complete narrative so far:\n\n"
-        f"{narrative_context}\n\n"
-        f"The player has reached the end of the story. The player has achieved a win or a loss: {win_or_loss}\n\n"
-        "Depending on whether its a win or a loss, your objective is to deliver a fast-paced, emotionally charged ending"
-        "Keep it rough, gritty, and immersive—appealing to raw instincts and deep emotions. "
-        "Let innocence, fear, guilt, love, hate, and desire collide, depending on the outcome of the choices. "
-        "End with a final, powerful image that leaves the player breathless. "
-        "Don't hold back in brutality, brutal honesty and raw emotion.\n\n"
-        "Output must strictly follow this format:\n\n"
-        "CONFIRMING SENTENCE: <Present-tense confirming sentence>\n"
-        "SITUATION: <Vivid description of the new situation>\n"
-    )
-    raw_response = call_gemini(prompt)
-    parsed_data = parse_final_wrapping(raw_response)
-    # Print Gemini-specific debug info.
-    debug_print_gemini(prompt, raw_response, parsed_data)
-    return raw_response

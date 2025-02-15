@@ -17,7 +17,9 @@ header {
 .score-counter {
   font-size: 1.2em;
   font-weight: bold;
+  font-family: 'Courier New', monospace;
   color: #0F0;
+  text-shadow: 0 0 5px #0F0;
 }
 
 main {

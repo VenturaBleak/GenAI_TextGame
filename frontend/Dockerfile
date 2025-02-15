@@ -1,24 +1,21 @@
-FROM node:16-alpine
+# ./frontend/Dockerfile
+# Use an official Node.js runtime as a parent image.
+FROM node:18-alpine
+
+# Set the working directory.
 WORKDIR /app
 
-# Copy package files and install dependencies.
-COPY package*.json ./
-RUN npm install
+# Copy package files first for better caching.
+COPY package.json package-lock.json* ./
 
-# Copy the remaining code.
+# Install dependencies using npm ci for a clean, fast install.
+RUN npm ci
+
+# Copy the rest of the frontend code.
 COPY . .
 
-# Get the build-time variable for the backend URL.
-ARG REACT_APP_BACKEND_URL
-# Set the environment variable for the build.
-ENV REACT_APP_BACKEND_URL=${REACT_APP_BACKEND_URL}
-
-# Build the React app.
-RUN npm run build
-
-# Expose port 3000.
+# Expose the port on which the React app runs.
 EXPOSE 3000
 
-# Use a simple static file server to serve the built app.
-RUN npm install -g serve
-CMD ["serve", "-s", "build", "-l", "3000"]
+# Start the React development server.
+CMD ["npm", "start"]

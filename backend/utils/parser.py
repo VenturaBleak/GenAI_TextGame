@@ -1,152 +1,97 @@
 import re
 
-def parse_initial_setting(response: str) -> dict:
-    """
-    Extracts the situation from the initial Gemini response.
 
-    Expected format (or similar):
-      SITUATION: Follow the white rabbit. <vivid description of the new setting>
+def parse_narrative_response(response: str, stage: str, pattern: str) -> dict:
+    """
+    Unified parser for narrative responses from the Gemini API.
+
+    Parameters:
+        response (str): The raw API response.
+        stage (str): One of "initial", "round", or "final".
+        pattern (str): The regex pattern corresponding to the prompt template as defined in the config JSON.
+                       The pattern must contain capturing groups in the following order:
+
+            For "initial":
+                Group 1: Situation (description after "SITUATION: Follow the white rabbit.")
+                Group 2: ACTION 1 (first action option)
+                Group 3: ACTION 1 CONFIRM (confirming sentence for action 1)
+                Group 4: ACTION 2 (second action option)
+                Group 5: ACTION 2 CONFIRM (confirming sentence for action 2)
+
+            For "round":
+                Group 1: CONFIRMING SENTENCE (the initial confirming sentence)
+                Group 2: Situation (vivid description of the new situation)
+                Group 3: ACTION 1 (first action option)
+                Group 4: ACTION 1 CONFIRM (confirming sentence for action 1)
+                Group 5: ACTION 2 (second action option)
+                Group 6: ACTION 2 CONFIRM (confirming sentence for action 2)
+
+            For "final":
+                Group 1: CONFIRMING SENTENCE (the final confirming sentence)
+                Group 2: Situation (vivid description of the final situation)
 
     Returns:
-        dict: A dictionary with keys:
-              - "situation": (str) the extracted situation.
-              - "choices": an empty list (for consistency with round responses).
+        dict: Parsed narrative data following the predefined format.
 
     Raises:
-        ValueError: If the response does not contain a proper "SITUATION:" line.
+        ValueError: If the response does not match the expected format.
     """
-    # Adjusted regex to include a literal dot and allow whitespace after it.
-    pattern = (
-        r"SITUATION:\s*Follow the white rabbit\.\s*(.*?)\n"
-        r"ACTION 1:\s*(.*?)\s*\n"
-        r"ACTION 1 CONFIRM:\s*(.*?)\s*\n"
-        r"ACTION 2:\s*(.*?)\s*\n"
-        r"ACTION 2 CONFIRM:\s*(.*)$"
-    )
-    match = re.search(pattern, response, re.DOTALL | re.MULTILINE | re.IGNORECASE)
-    if match:
+    match = re.search(pattern, response, re.DOTALL | re.IGNORECASE)
+    if not match:
+        raise ValueError(f"{stage.capitalize()} narrative response format invalid. Received response:\n{response}")
+
+    if stage == "initial":
         situation = match.group(1).strip()
         action1 = match.group(2).strip()
         action1_confirm = match.group(3).strip()
         action2 = match.group(4).strip()
         action2_confirm = match.group(5).strip()
+        parsed = {
+            "situation": situation,
+            "choices": [
+                {"id": 1, "choice_description": action1, "confirming_sentence": action1_confirm, "outcome": "positive"},
+                {"id": 2, "choice_description": action2, "confirming_sentence": action2_confirm, "outcome": "negative"}
+            ]
+        }
+    elif stage == "round":
+        confirming_sentence = match.group(1).strip()
+        situation = match.group(2).strip()
+        action1 = match.group(3).strip()
+        action1_confirm = match.group(4).strip()
+        action2 = match.group(5).strip()
+        action2_confirm = match.group(6).strip()
+        parsed = {
+            "confirming_sentence": confirming_sentence,
+            "situation": situation,
+            "choices": [
+                {"id": 1, "choice_description": action1, "confirming_sentence": action1_confirm, "outcome": "positive"},
+                {"id": 2, "choice_description": action2, "confirming_sentence": action2_confirm, "outcome": "negative"}
+            ]
+        }
+    elif stage == "final":
+        confirming_sentence = match.group(1).strip()
+        situation = match.group(2).strip()
+        parsed = {
+            "confirming_sentence": confirming_sentence,
+            "situation": situation
+        }
     else:
-        expected_format = (
-            "Expected format:\n"
-            "  SITUATION: <vivid description of the new situation>\n"
-            "  ACTION 1: <first action option>\n"
-            "  ACTION 1 CONFIRM: <confirming sentence for action 1>\n"
-            "  ACTION 2: <second action option>\n"
-            "  ACTION 2 CONFIRM: <confirming sentence for action 2>"
-        )
-        raise ValueError(
-            "Round response error: missing required fields.\n"
-            f"{expected_format}\n"
-            "Received:\n"
-            f"{response}"
-        )
+        raise ValueError("Invalid stage provided to parser. Use 'initial', 'round', or 'final'.")
 
-    choices = [
-        {"id": 1, "choice_description": action1, "confirming_sentence": action1_confirm, "outcome": "positive"},
-        {"id": 2, "choice_description": action2, "confirming_sentence": action2_confirm, "outcome": "negative"}
-    ]
-    return {"situation": situation, "choices": choices}
+    # Additional assertions on parsed output.
+    if stage in ("initial", "round"):
+        assert isinstance(parsed, dict), "Parsed output should be a dictionary."
+        assert "situation" in parsed, "Parsed output missing 'situation'"
+        assert "choices" in parsed, "Parsed output missing 'choices'"
+        assert isinstance(parsed["choices"], list) and len(parsed["choices"]) == 2, "There must be exactly two choices"
+        for choice in parsed["choices"]:
+            assert "id" in choice, "Choice missing 'id'"
+            assert "choice_description" in choice, "Choice missing 'choice_description'"
+            assert "confirming_sentence" in choice, "Choice missing 'confirming_sentence'"
+            assert "outcome" in choice, "Choice missing 'outcome'"
+    elif stage == "final":
+        assert isinstance(parsed, dict), "Parsed output should be a dictionary."
+        assert "confirming_sentence" in parsed, "Parsed output missing 'confirming_sentence'"
+        assert "situation" in parsed, "Parsed output missing 'situation'"
 
-def parse_round_response(response: str) -> dict:
-    """
-    Parses a Gemini API response for a round that includes a situation and two choices.
-
-    Expected format:
-      SITUATION: <vivid description of the new situation>
-      ACTION 1: <first action option>
-      ACTION 1 CONFIRM: <confirming sentence for action 1>
-      ACTION 2: <second action option>
-      ACTION 2 CONFIRM: <confirming sentence for action 2>
-
-    Returns:
-        dict: A dictionary with keys:
-              - "situation": (str) the new situation description.
-              - "choices": (list) two choice dictionaries, each with:
-                   "id": 1 or 2,
-                   "choice_description": the action text,
-                   "confirming_sentence": the confirming sentence,
-                   "outcome": "positive" for ACTION 1 and "negative" for ACTION 2.
-
-    Raises:
-        ValueError: If the response does not contain all required fields.
-                 The error message includes the expected format and the received response.
-    """
-    import re
-
-    pattern = (
-        r"SITUATION:\s*(.*?)\s*\n"
-        r"ACTION 1:\s*(.*?)\s*\n"
-        r"ACTION 1 CONFIRM:\s*(.*?)\s*\n"
-        r"ACTION 2:\s*(.*?)\s*\n"
-        r"ACTION 2 CONFIRM:\s*(.*)$"
-    )
-    match = re.search(pattern, response, re.DOTALL | re.MULTILINE | re.IGNORECASE)
-    if match:
-        situation = match.group(1).strip()
-        action1 = match.group(2).strip()
-        action1_confirm = match.group(3).strip()
-        action2 = match.group(4).strip()
-        action2_confirm = match.group(5).strip()
-    else:
-        expected_format = (
-            "Expected format:\n"
-            "  SITUATION: <vivid description of the new situation>\n"
-            "  ACTION 1: <first action option>\n"
-            "  ACTION 1 CONFIRM: <confirming sentence for action 1>\n"
-            "  ACTION 2: <second action option>\n"
-            "  ACTION 2 CONFIRM: <confirming sentence for action 2>"
-        )
-        raise ValueError(
-            "Round response error: missing required fields.\n"
-            f"{expected_format}\n"
-            "Received:\n"
-            f"{response}"
-        )
-
-    choices = [
-        {"id": 1, "choice_description": action1, "confirming_sentence": action1_confirm, "outcome": "positive"},
-        {"id": 2, "choice_description": action2, "confirming_sentence": action2_confirm, "outcome": "negative"}
-    ]
-    return {"situation": situation, "choices": choices}
-
-def parse_final_wrapping(response: str) -> str:
-    """
-    Extracts the final wrapping from the Gemini response.
-
-    Expected format:
-      FINAL WRAPPING: <final narrative wrapping>
-
-    Returns:
-        str: The extracted final wrapping.
-
-    Raises:
-        ValueError: If the response does not contain the expected "FINAL WRAPPING:" line.
-    """
-    import re
-
-    pattern = (
-        r"SITUATION:\s*(.*?)\s*\n"
-    )
-
-    match = re.search(pattern, response, re.DOTALL | re.MULTILINE | re.IGNORECASE)
-
-
-    if match:
-        situation = match.group(1).strip()
-    else:
-        expected_format = (
-            "Expected format:\n"
-            "  SITUATION: <vivid description of the new situation>\n"
-        )
-        raise ValueError(
-            "Round response error: missing required fields.\n"
-            f"{expected_format}\n"
-            "Received:\n"
-            f"{response}"
-        )
-    return situation
+    return parsed
