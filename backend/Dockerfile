@@ -1,31 +1,23 @@
-# backend/Dockerfile
-#
-# Purpose:
-#   Builds the Python backend using a slim Python image.
-#
-# Inputs:
-#   - requirements.txt: lists all Python dependencies.
-#   - All source files in the backend directory.
-#
-# Outputs:
-#   - A Docker image that runs the FastAPI app using Uvicorn.
-#
-# Guardrails:
-#   - Exposes port 8000 for the application.
-FROM python:3.9-slim
+# ./backend/Dockerfile
+# Use an official Python runtime as a parent image.
+FROM python:3.11-slim
 
-# Set working directory in the container
+# Prevent Python from writing .pyc files to disk and enable unbuffered stdout/stderr.
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set the working directory to /app.
 WORKDIR /app
 
-# Copy the dependency list and install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy and install dependencies.
+COPY requirements.txt /app/
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy all backend source code into the container
-COPY . .
+# Copy the backend code into the container.
+COPY . /app/
 
-# Expose the port the app runs on
+# Expose the port FastAPI will run on.
 EXPOSE 8000
 
-# Run the application using uvicorn. Adjust "app:app" if your main module is named differently.
+# Run the FastAPI app using uvicorn.
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

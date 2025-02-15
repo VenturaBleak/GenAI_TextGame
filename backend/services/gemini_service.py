@@ -47,6 +47,7 @@ from google import genai
 
 # Use the API key from the environment (or a fallback value).
 API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY")
+# fallback value is under ./.env
 client = genai.Client(api_key=API_KEY)
 
 def call_gemini(prompt: str) -> str:

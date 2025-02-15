@@ -1,163 +1,128 @@
-import { useState } from 'react';
-import * as api from '../services/api';
-import { shuffleArray } from '../utils/shuffle';
+// ./frontend/src/hooks/useGame.js
+
+import { useState } from "react";
+import { submitNarrativeRequest } from "../api/narrativeAPI";
 
 /**
- * useGame - A custom React hook for managing game state and text display.
+ * useGame - A custom hook to manage the game state.
  *
- * Text Types:
- *   1) Type 1 (Constant): Provided as the initialMessage (e.g., "Follow the white rabbit.")
- *   2) Type 2 (Confirming Sentence): Immediately appended text (e.g., the action's confirming sentence).
- *   3) Type 3 (Backend Narrative): Fetched from the backend and animated before display.
+ * Parameters:
+ *   - initialMessage: The initial static text (e.g. "Follow the white rabbit.\n\n")
+ *   - backendUrl: The backend URL (not used directly here since our API helper handles it)
  *
- * The hook maintains two text states:
- *   - immediateNarrative: Contains Type 1 and Type 2 text, shown immediately.
- *   - animatedSegment: Contains Type 3 text to be animated.
+ * State Variables:
+ *   - immediateNarrative: Cumulative narrative displayed as static text.
+ *   - animatedSegment: The current narrative segment being animated.
+ *   - choices: Array of choice objects returned from the API.
+ *   - score: Current score.
+ *   - endGameThreshold: A score threshold for ending the game.
+ *   - gameOver: Boolean flag indicating if the game has ended.
+ *   - animationInProgress: Boolean indicating if an animation is running.
+ *   - textAnimationComplete: Boolean indicating if the current text animation is finished.
+ *   - hasStarted: Boolean indicating if the game has started.
  *
- * Also, the hook tracks whether the game has started (i.e. the initial "Follow" button was pressed).
- *
- * @param {string} initialMessage - The constant initial text.
- * @param {string} backendUrl - The base URL for the backend API.
- * @returns {Object} Game state and action functions.
+ * Functions:
+ *   - startGame: Calls the API with stage "initial" and updates state.
+ *   - chooseOption: Calls the API with stage "round" based on the chosen option,
+ *                    updates the score, and appends the new narrative.
+ *   - resetGame: Resets the game state to initial values.
+ *   - handleAnimationComplete: Marks the current animated text as finished.
  */
-export const useGame = (initialMessage, backendUrl) => {
-  // Text that is printed immediately (Type 1 and Type 2).
+export function useGame(initialMessage, backendUrl) {
+  const [hasStarted, setHasStarted] = useState(false);
   const [immediateNarrative, setImmediateNarrative] = useState(initialMessage);
-  // Text that will be animated (Type 3).
   const [animatedSegment, setAnimatedSegment] = useState("");
   const [choices, setChoices] = useState([]);
+  const [score, setScore] = useState(0);
+  const [endGameThreshold] = useState(5); // Example threshold for game over
   const [gameOver, setGameOver] = useState(false);
   const [animationInProgress, setAnimationInProgress] = useState(false);
   const [textAnimationComplete, setTextAnimationComplete] = useState(false);
-  const [score, setScore] = useState(0);
-  const [endGameThreshold, setEndGameThreshold] = useState(5);
-  // Tracks whether the game has begun (i.e. the user clicked "Follow")
-  const [hasStarted, setHasStarted] = useState(false);
 
-  /**
-   * Processes the backend response.
-   *
-   * Splits the newly received text (if any) into:
-   * - An immediate part (confirming sentence, Type 2) and
-   * - A part to be animated (backend narrative, Type 3).
-   *
-   * Also updates other game state values.
-   *
-   * @param {Object} data - The JSON response from the backend.
-   */
-  const handleResponse = (data) => {
-  if (data.current_round && data.current_round.situation) {
-    // We now only want to animate the new situation text (Type 3).
-    const newSituation = data.current_round.situation.trim();
-    // Set the animated segment to the new situation plus an extra newline.
-    setAnimatedSegment(newSituation + "\n");
-  } else {
-    // Fallback: if there is no current round (should not normally occur), use the difference.
-    const fullNarrative = data.narrative_context;
-    let newText = fullNarrative.substring(immediateNarrative.length).trim();
-    setAnimatedSegment(newText + "\n");
-  }
-
-  // Update additional game state.
-  setChoices(data.current_round ? shuffleArray(data.current_round.choices) : []);
-  setGameOver(data.game_over);
-  setScore(data.score);
-  setEndGameThreshold(data.end_game_threshold || 5);
-  setAnimationInProgress(true);
-  setTextAnimationComplete(false);
-};
-
-  /**
-   * Initiates the game by calling the backend /api/start endpoint.
-   *
-   * When the user clicks "Follow", the game begins.
-   * The constant initial text is already displayed.
-   */
+  // Start the game by calling the "initial" narrative endpoint.
   const startGame = async () => {
-    // Mark that the game has started (thus, remove the "Follow" button).
+    console.debug("[useGame] Starting game...");
     setHasStarted(true);
     try {
-      const data = await api.startGame(backendUrl);
-      handleResponse(data);
-      // If no round data exists, auto-trigger round 1 after a short delay.
-      if (!data.current_round) {
-        setTimeout(() => {
-          chooseOption("positive");
-        }, 2000);
-      }
+      const payload = { stage: "initial" };
+      console.debug("[useGame] startGame payload:", payload);
+      const result = await submitNarrativeRequest(payload);
+      console.debug("[useGame] startGame result:", result);
+      // Expecting result: { stage:"initial", situation, choices }
+      setImmediateNarrative(initialMessage);
+      setAnimatedSegment(result.situation);
+      setChoices(result.choices);
+      setAnimationInProgress(true);
     } catch (error) {
-      console.error("Error starting game:", error);
-      setAnimationInProgress(false);
+      console.error("[useGame] Error starting game:", error);
     }
   };
 
-  /**
-   * Sends the player's choice to the backend and processes the response.
-   *
-   * @param {string} choiceOutcome - The outcome ("positive" or "negative") of the player's choice.
-   */
- const chooseOption = async (choiceOutcome) => {
-  if (animationInProgress) return; // Prevent duplicate submissions.
+  // Called when a choice is selected.
+  const chooseOption = async (outcome) => {
+    console.debug("[useGame] Choosing option:", outcome);
+    // Outcome: "positive" or "negative" — adjust score accordingly.
+    const newScore = outcome === "positive" ? score + 1 : score - 1;
+    console.debug("[useGame] New score:", newScore);
+    setScore(newScore);
 
-  // Look up the selected choice from the current choices array.
-  const selectedChoice = choices.find(c => c.outcome === choiceOutcome);
-  if (!selectedChoice) return;
+    // Build a narrative context.
+    const narrativeContext = immediateNarrative + "\n" + animatedSegment;
+    // Find the chosen option.
+    const selectedChoice = choices.find((choice) => choice.outcome === outcome) || {};
+    const action = selectedChoice.choice_description || "";
+    const actionConfirmingSentence = selectedChoice.confirming_sentence || "";
+    console.debug("[useGame] Chosen option details:", { action, actionConfirmingSentence });
 
-  // Construct the immediate update text with the desired order:
-  // First, print the decision made (the choice text),
-  // then a blank line, then "PLAYER CHOICE: " plus the confirming sentence,
-  // and finally another blank line.
-  const immediateUpdate =
-    "\n" +
-    "DECISION MADE: " + selectedChoice.choice_description + "\n\n" +
-    selectedChoice.confirming_sentence + "\n";
+    try {
+      const payload = {
+        stage: "round",
+        narrative_context: narrativeContext,
+        action,
+        outcome_value: outcome === "positive" ? 1 : -1,
+        action_confirming_sentence: actionConfirmingSentence,
+      };
+      console.debug("[useGame] chooseOption payload:", payload);
+      const result = await submitNarrativeRequest(payload);
+      console.debug("[useGame] chooseOption result:", result);
+      // Append the current animated segment to the static narrative.
+      setImmediateNarrative((prev) => {
+        const newNarrative = prev + "\n" + animatedSegment;
+        console.debug("[useGame] Updated immediateNarrative:", newNarrative);
+        return newNarrative;
+      });
+      setAnimatedSegment(result.situation);
+      setChoices(result.choices);
+      setTextAnimationComplete(false);
+      setAnimationInProgress(true);
+      // If absolute score meets threshold, mark game over.
+      if (Math.abs(newScore) >= endGameThreshold) {
+        console.debug("[useGame] Game over threshold reached. Game Over!");
+        setGameOver(true);
+      }
+    } catch (error) {
+      console.error("[useGame] Error processing choice:", error);
+    }
+  };
 
-  // Instead of appending directly to immediateNarrative,
-  // set this update as the animated segment so that it is animated.
-  setAnimatedSegment(immediateUpdate);
-
-  // Clear the current choices so they disappear immediately.
-  setChoices([]);
-
-  // Set animation state flags.
-  setAnimationInProgress(true);
-  setTextAnimationComplete(false);
-
-  try {
-    // Now trigger the API call in parallel.
-    const data = await api.chooseOption(backendUrl, choiceOutcome);
-    // When the API call completes, process and animate the new narrative.
-    handleResponse(data);
-  } catch (error) {
-    console.error("Error processing choice:", error);
-    setAnimationInProgress(false);
-  }
-};
-
-/**
- * Called when the animated text (Type 3) has finished its animation.
- * The animated segment is then appended to the immediate narrative.
- */
-const handleAnimationComplete = () => {
-  // Append animated text and then add an extra newline (blank line) at the end.
-  setImmediateNarrative(prev => prev + (animatedSegment ? '\n' + animatedSegment : '') + "\n");
-  setAnimatedSegment("");
-  setTextAnimationComplete(true);
-  setAnimationInProgress(false);
-};
-
-  /**
-   * Resets the game state to its initial values.
-   */
+  // Reset the game to its initial state.
   const resetGame = () => {
+    console.debug("[useGame] Resetting game state.");
+    setHasStarted(false);
     setImmediateNarrative(initialMessage);
     setAnimatedSegment("");
     setChoices([]);
+    setScore(0);
     setGameOver(false);
     setAnimationInProgress(false);
     setTextAnimationComplete(false);
-    setScore(0);
-    setHasStarted(false);
+  };
+
+  // Called when text animation finishes.
+  const handleAnimationComplete = () => {
+    console.debug("[useGame] Animation complete.");
+    setTextAnimationComplete(true);
+    setAnimationInProgress(false);
   };
 
   return {
@@ -175,4 +140,4 @@ const handleAnimationComplete = () => {
     resetGame,
     handleAnimationComplete,
   };
-};
+}

@@ -1,173 +1,127 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
-import os
+from pydantic import BaseModel, Field
+from typing import Union, Literal, Optional, List
+from services.narrative_service import generate_narrative
 
-from models.game_state import GameState
-from models.choice_request import ChoiceRequest
-from services.narrative_service import (
-    generate_round_context,
-    generate_final_wrapping,
-    generate_first_round_context
-)
-from utils.debug import debug_print_state
+app = FastAPI(title="Unified Narrative API", version="1.0")
 
-# End-of-game threshold (e.g. 3 points, positive or negative)
-END_GAME_THRESHOLD = int(os.environ.get("END_GAME_THRESHOLD", "3"))
-
-app = FastAPI()
+# Configure CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for development/testing
+    allow_origins=["http://localhost:3000"],  # Replace with your frontend's origin as needed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global game state instance.
-game_state = GameState()
+# ============================
+# REQUEST MODELS
+# ============================
 
-# Mapping for score delta based on choice outcome.
-outcome_mapping = {
-    "positive": 1,
-    "negative": -1
-}
+class BaseNarrativeRequest(BaseModel):
+    stage: str
 
+class InitialNarrativeRequest(BaseNarrativeRequest):
+    stage: Literal['initial'] = 'initial'
+    # No additional parameters required for the initial stage.
 
-@app.get("/api/start")
-def start_game():
+class RoundNarrativeRequest(BaseNarrativeRequest):
+    stage: Literal['round'] = 'round'
+    narrative_context: Optional[str] = ""
+    action: Optional[str] = ""
+    outcome_value: int = 0
+    action_confirming_sentence: Optional[str] = ""
+
+class FinalNarrativeRequest(BaseNarrativeRequest):
+    stage: Literal['final'] = 'final'
+    narrative_context: str
+    # Use `pattern` instead of `regex` per Pydantic v2
+    win_or_loss: str = Field(..., pattern="^(?i)(win|loss)$")  # Accepts "win" or "loss" (case-insensitive)
+
+# Unified request model as a discriminated union:
+NarrativeRequest = Union[InitialNarrativeRequest, RoundNarrativeRequest, FinalNarrativeRequest]
+
+# ============================
+# RESPONSE MODELS
+# ============================
+
+class Choice(BaseModel):
+    id: int
+    choice_description: str
+    confirming_sentence: str
+    outcome: str
+
+class InitialNarrativeResponse(BaseModel):
+    stage: Literal['initial'] = 'initial'
+    situation: str
+    choices: List[Choice]
+
+class RoundNarrativeResponse(BaseModel):
+    stage: Literal['round'] = 'round'
+    confirming_sentence: str
+    situation: str
+    choices: List[Choice]
+
+class FinalNarrativeResponse(BaseModel):
+    stage: Literal['final'] = 'final'
+    confirming_sentence: str
+    situation: str
+
+# Unified response type:
+NarrativeResponse = Union[InitialNarrativeResponse, RoundNarrativeResponse, FinalNarrativeResponse]
+
+# ============================
+# UNIFIED ENDPOINT
+# ============================
+
+@app.post("/api/narrative", response_model=NarrativeResponse)
+def unified_narrative_endpoint(request: NarrativeRequest):
     """
-    Initializes the game by resetting the game state and generating the first round.
+    Unified Narrative Endpoint
 
-    The first round is produced by calling generate_first_round_context(), which returns a 
-    dictionary containing the initial "situation" and available "choices". The narrative context 
-    is then set to the constant message "Follow the white rabbit." followed by the generated situation.
-
-    Returns:
-        A JSON object with:
-            - status: A status message.
-            - narrative_context: The complete narrative so far.
-            - current_round: The first round's data.
-            - score: The current score (should be 0).
-            - game_over: False.
-            - end_game_threshold: The score threshold.
+    This endpoint generates narrative content for three stages:
+      - "initial": No additional parameters.
+      - "round": Requires:
+            • narrative_context (optional; defaults to blank)
+            • action (optional; defaults to blank)
+            • outcome_value (integer)
+            • action_confirming_sentence (optional; defaults to blank)
+      - "final": Requires:
+            • narrative_context (the complete narrative context)
+            • win_or_loss ("win" or "loss", case-insensitive)
     """
-    game_state.reset()
+    try:
+        if request.stage == "initial":
+            # For the "initial" stage, no extra parameters are needed.
+            result = generate_narrative(stage="initial")
+            result["stage"] = "initial"
+            return result
 
-    # Generate the first round context from Gemini.
-    round_data = generate_first_round_context()
-    game_state.current_round = round_data
+        elif request.stage == "round":
+            # Type hinting helps here: request is of type RoundNarrativeRequest.
+            req: RoundNarrativeRequest = request  # Cast for clarity.
+            result = generate_narrative(
+                stage="round",
+                narrative_context=req.narrative_context,
+                action=req.action,
+                outcome_value=req.outcome_value,
+                action_confirming_sentence=req.action_confirming_sentence
+            )
+            result["stage"] = "round"
+            return result
 
-    # Set the initial narrative context to the constant message plus the situation.
-    game_state.narrative_context = f"Follow the white rabbit.\n{round_data['situation']}\n"
+        elif request.stage == "final":
+            req: FinalNarrativeRequest = request  # Cast for clarity.
+            result = generate_narrative(
+                stage="final",
+                narrative_context=req.narrative_context,
+                win_or_loss=req.win_or_loss
+            )
+            result["stage"] = "final"
+            return result
 
-    debug_print_state("API Call GET", extra_info={
-        "narrative_context": game_state.narrative_context,
-        "score": game_state.score,
-        "round_data": round_data
-    })
-
-    return {
-        "status": "Round Started, awaiting choice",
-        "narrative_context": game_state.narrative_context,
-        "current_round": round_data,
-        "score": game_state.score,
-        "game_over": False,
-        "end_game_threshold": END_GAME_THRESHOLD
-    }
-
-
-@app.post("/api/choose")
-def choose(choice_request: ChoiceRequest):
-    """
-    Processes the player's choice and returns the next round context.
-
-    Steps:
-      1. Validates the player's choice (must be "positive" or "negative").
-      2. Updates the game score based on the choice.
-      3. Calls generate_round_context() to produce the new situation and updated choices.
-      4. **Crucially:** Extracts the new action confirming sentence from the fresh round data
-         (rather than reusing a stale value) and appends it—followed by a blank line and then the new situation—to the narrative.
-      5. Checks for game-over conditions based on the updated score.
-
-    Returns:
-        A JSON object with:
-            - status: A status message.
-            - narrative_context: The updated narrative context.
-            - current_round: The new round's data (if the game continues).
-            - score: The updated score.
-            - game_over: Boolean indicating if the game has ended.
-            - end_game_threshold: The score threshold.
-    """
-    choice_type = choice_request.choice_type.lower()
-    if choice_type not in outcome_mapping:
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid choice type. Must be 'positive' or 'negative'."
-        )
-
-    current_round = game_state.current_round
-    if not current_round or "choices" not in current_round:
-        raise HTTPException(
-            status_code=500,
-            detail="Current round data is incomplete."
-        )
-
-    selected_choice = next(
-        (c for c in current_round["choices"] if c["outcome"] == choice_type),
-        None
-    )
-    if not selected_choice:
-        raise HTTPException(
-            status_code=400,
-            detail="Choice not found."
-        )
-
-    game_state.score += outcome_mapping[choice_type]
-
-    # Generate the next round context.
-    round_data = generate_round_context(
-        narrative_context=game_state.narrative_context,
-        action=selected_choice["choice_description"],
-        outcome_value=outcome_mapping[choice_type],
-        action_confirming_sentence=selected_choice["confirming_sentence"]
-    )
-
-    # **Fix:** Update the current round in the game state with the new round data.
-    game_state.current_round = round_data
-
-    game_state.narrative_context += ("\n" +
-                                     "DECISION MADE: " + selected_choice["choice_description"] + "\n" +
-                                     "PLAYER CHOICE: " + selected_choice["confirming_sentence"] + "\n\n" +
-                                     round_data["situation"] + "\n")
-
-    debug_print_state("API Call POST", extra_info={
-        "received_choice": selected_choice["choice_description"],
-        "confirming_sentence": selected_choice["confirming_sentence"],
-        "current_round": round_data,
-        "score": game_state.score,
-        "narrative_context": game_state.narrative_context
-    })
-
-    if abs(game_state.score) >= END_GAME_THRESHOLD:
-        final_text = generate_final_wrapping(game_state.narrative_context, game_state.score)
-        game_state.narrative_context += "\n" + final_text
-        return {
-            "status": "Game Over",
-            "narrative_context": game_state.narrative_context,
-            "score": game_state.score,
-            "game_over": True,
-            "end_game_threshold": END_GAME_THRESHOLD
-        }
-    else:
-        return {
-            "status": "Round completed, awaiting next choice",
-            "narrative_context": game_state.narrative_context,
-            "current_round": round_data,
-            "score": game_state.score,
-            "game_over": False,
-            "end_game_threshold": END_GAME_THRESHOLD
-        }
-
-if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+        else:
+            raise HTTPException(status_code=400, detail="Invalid stage provided.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
