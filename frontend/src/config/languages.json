@@ -3,60 +3,70 @@
     {
       "code": "en",
       "name": "English",
+      "englishName": "English",
       "follow_the_white_rabbit": "Follow the white rabbit",
       "you_chose": "You chose"
     },
     {
       "code": "de",
-      "name": "German",
+      "name": "Deutsch",
+      "englishName": "German",
       "follow_the_white_rabbit": "Folge dem weißen Kaninchen",
       "you_chose": "Du hast gewählt"
     },
     {
       "code": "es",
-      "name": "Spanish",
+      "name": "Español",
+      "englishName": "Spanish",
       "follow_the_white_rabbit": "Sigue al conejo blanco",
       "you_chose": "Tú elegiste"
     },
     {
       "code": "fr",
-      "name": "French",
+      "name": "Français",
+      "englishName": "French",
       "follow_the_white_rabbit": "Suis le lapin blanc",
       "you_chose": "Tu as choisi"
     },
     {
       "code": "it",
-      "name": "Italian",
+      "name": "Italiano",
+      "englishName": "Italian",
       "follow_the_white_rabbit": "Segui il coniglio bianco",
       "you_chose": "Hai scelto"
     },
     {
       "code": "pt",
-      "name": "Portuguese",
+      "name": "Português",
+      "englishName": "Portuguese",
       "follow_the_white_rabbit": "Siga o coelho branco",
       "you_chose": "Você escolheu"
     },
     {
       "code": "zh",
-      "name": "Chinese",
+      "name": "中文",
+      "englishName": "Chinese",
       "follow_the_white_rabbit": "跟随白兔",
       "you_chose": "你选择了"
     },
     {
       "code": "ja",
-      "name": "Japanese",
+      "name": "日本語",
+      "englishName": "Japanese",
       "follow_the_white_rabbit": "白いウサギを追え",
       "you_chose": "あなたは選んだ"
     },
     {
       "code": "ru",
-      "name": "Russian",
+      "name": "Русский",
+      "englishName": "Russian",
       "follow_the_white_rabbit": "Следуй за белым кроликом",
       "you_chose": "Ты выбрал"
     },
     {
       "code": "ar",
-      "name": "Arabic",
+      "name": "العربية",
+      "englishName": "Arabic",
       "follow_the_white_rabbit": "اتبع الأرنب الأبيض",
       "you_chose": "لقد اخترت"
     }

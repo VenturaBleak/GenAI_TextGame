@@ -1,3 +1,5 @@
+# ./backend/services/narrative_service.py
+
 import os
 import json
 from services.gemini_service import call_gemini
@@ -5,18 +7,17 @@ from utils.parser import parse_narrative_response
 
 # Load prompt templates and regex patterns from the JSON configuration file.
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'prompts.json')
-
 with open(CONFIG_PATH, 'r') as f:
     PROMPT_CONFIG = json.load(f)
 
 def generate_narrative(
     stage: str,
+    language: str = "",  # Accepts any language (e.g. "Deutsch")
     narrative_context: str = "",
     action: str = "",
     outcome_value: int = 0,
     action_confirming_sentence: str = "",
-    win_or_loss: str = "",
-    language: str = "German"   # New parameter
+    win_or_loss: str = ""
 ) -> dict:
     """
     Unified narrative generator function.
@@ -93,7 +94,6 @@ def generate_narrative(
     Returns:
         dict: Parsed narrative data conforming to the above format.
     """
-    # Map stage to the corresponding config key.
     if stage == "initial":
         config_key = "first_round_context"
     elif stage == "round":
@@ -106,40 +106,48 @@ def generate_narrative(
     prompt_template = PROMPT_CONFIG[config_key]["prompt"]
     regex_pattern = PROMPT_CONFIG[config_key]["regex"]
 
-    # Format the prompt based on the stage.
+    # Format the prompt based on the stage, always using the language parameter.
     if stage == "initial":
         prompt = prompt_template.format(language=language)
     elif stage == "round":
         prompt = prompt_template.format(
-        narrative_context=narrative_context,
-        action=action,
-        outcome_value=outcome_value,
-        action_confirming_sentence=action_confirming_sentence,
-        language=language  # Passing the new parameter
+            narrative_context=narrative_context,
+            action=action,
+            outcome_value=outcome_value,
+            action_confirming_sentence=action_confirming_sentence,
+            language=language
         )
     elif stage == "final":
         prompt = prompt_template.format(
             narrative_context=narrative_context,
             win_or_loss=win_or_loss,
-            language=language  # Passing the new parameter
+            language=language
         )
 
     # Call the Gemini API.
     raw_response = call_gemini(prompt)
-    
-    # Parse the raw response using the unified parser (with the provided regex pattern).
+
+    # Parse the raw response.
     parsed_data = parse_narrative_response(raw_response, stage, regex_pattern)
 
-    # Assertions to ensure the parsed output is in the predefined format.
+    # Assertions for expected format.
     if stage in ("initial", "round"):
         assert "situation" in parsed_data, "Parsed narrative missing 'situation'"
         assert "choices" in parsed_data, "Parsed narrative missing 'choices'"
-        assert isinstance(parsed_data["choices"], list) and len(parsed_data["choices"]) == 2, "Expected exactly two choices"
+        assert isinstance(parsed_data["choices"], list) and len(
+            parsed_data["choices"]) == 2, "Expected exactly two choices"
         for choice in parsed_data["choices"]:
             assert "id" in choice, "Choice missing 'id'"
             assert "choice_description" in choice, "Choice missing 'choice_description'"
             assert "confirming_sentence" in choice, "Choice missing 'confirming_sentence'"
             assert "outcome" in choice, "Choice missing 'outcome'"
+        # For the "round" stage, ensure a top-level confirming_sentence is present.
+        if stage == "round" and "confirming_sentence" not in parsed_data:
+            # As a fallback, use the confirming_sentence of the first choice.
+            if parsed_data["choices"]:
+                parsed_data["confirming_sentence"] = parsed_data["choices"][0].get("confirming_sentence", "")
+            else:
+                parsed_data["confirming_sentence"] = ""
     elif stage == "final":
         assert "confirming_sentence" in parsed_data, "Parsed final narrative missing 'confirming_sentence'"
         assert "situation" in parsed_data, "Parsed final narrative missing 'situation'"
