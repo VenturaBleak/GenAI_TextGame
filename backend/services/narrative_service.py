@@ -5,6 +5,7 @@ from utils.parser import parse_narrative_response
 
 # Load prompt templates and regex patterns from the JSON configuration file.
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'prompts.json')
+
 with open(CONFIG_PATH, 'r') as f:
     PROMPT_CONFIG = json.load(f)
 
@@ -14,7 +15,8 @@ def generate_narrative(
     action: str = "",
     outcome_value: int = 0,
     action_confirming_sentence: str = "",
-    win_or_loss: str = ""
+    win_or_loss: str = "",
+    language: str = "German"   # New parameter
 ) -> dict:
     """
     Unified narrative generator function.
@@ -106,20 +108,22 @@ def generate_narrative(
 
     # Format the prompt based on the stage.
     if stage == "initial":
-        prompt = prompt_template
+        prompt = prompt_template.format(language=language)
     elif stage == "round":
         prompt = prompt_template.format(
-            narrative_context=narrative_context,
-            action=action,
-            outcome_value=outcome_value,
-            action_confirming_sentence=action_confirming_sentence
+        narrative_context=narrative_context,
+        action=action,
+        outcome_value=outcome_value,
+        action_confirming_sentence=action_confirming_sentence,
+        language=language  # Passing the new parameter
         )
     elif stage == "final":
         prompt = prompt_template.format(
             narrative_context=narrative_context,
-            win_or_loss=win_or_loss
+            win_or_loss=win_or_loss,
+            language=language  # Passing the new parameter
         )
-    
+
     # Call the Gemini API.
     raw_response = call_gemini(prompt)
     

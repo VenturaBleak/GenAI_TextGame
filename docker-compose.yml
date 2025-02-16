@@ -7,10 +7,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ENV=production
+      - ENV=development
       - GEMINI_API_KEY=${GEMINI_API_KEY}  # This pulls the key from the root .env file.
-    volumes:
-      - ./backend:/app
+      - CHOKIDAR_USEPOLLING=true
+    develop:
+      watch:
+        - action: sync        # Sync file changes from host to container
+          path: ./backend    # The local directory to watch
+          target: /app        # The target directory inside the container
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -25,9 +29,15 @@ services:
       - "3000:3000"
     environment:
       - REACT_APP_BACKEND_URL=http://backend:8000
-    volumes:
-      - ./frontend:/app
+      - CHOKIDAR_USEPOLLING=true  # This helps with file watching in Docker on Windows.
+    develop:
+      watch:
+        - action: sync        # Sync file changes from host to container
+          path: ./frontend    # The local directory to watch
+          target: /app        # The target directory inside the container
+          ignore:
+            - node_modules/    # Ignore node_modules folder to speed up sync
     depends_on:
       - backend
-    stdin_open: true    # Keeps container STDIN open.
-    tty: true           # Allocates a TTY.
+    stdin_open: true
+    tty: true
