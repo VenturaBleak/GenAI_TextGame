@@ -38,6 +38,7 @@ export function useGame(initialMessage, backendUrl) {
   const [gameOver, setGameOver] = useState(false);
   const [animationInProgress, setAnimationInProgress] = useState(false);
   const [textAnimationComplete, setTextAnimationComplete] = useState(false);
+  const [initialAnimationDone, setInitialAnimationDone] = useState(false);
 
   // Helper function to log the current game state.
   const logGameState = (action, extra = {}) => {
@@ -173,6 +174,10 @@ export function useGame(initialMessage, backendUrl) {
     setAnimatedSegment("");
     setTextAnimationComplete(true);
     setAnimationInProgress(false);
+    // If the game hasn't started yet, mark the initial animation as done.
+    if (!hasStarted) {
+      setInitialAnimationDone(true);
+    }
     logGameState("handleAnimationComplete");
   };
 
@@ -190,5 +195,6 @@ export function useGame(initialMessage, backendUrl) {
     chooseOption,
     resetGame,
     handleAnimationComplete,
+    initialAnimationDone,
   };
 }

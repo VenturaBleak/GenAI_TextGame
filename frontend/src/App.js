@@ -19,7 +19,7 @@ import './App.css';
  */
 const App = () => {
   const backendUrl = process.env.REACT_APP_BACKEND_URL || '';
-  const initialMessage = "Follow the white rabbit.\n\n";
+  const initialMessage = "Follow the black duck.\n\n";
 
   const {
     narrative,
@@ -35,6 +35,7 @@ const App = () => {
     chooseOption,
     resetGame,
     handleAnimationComplete,
+    initialAnimationDone,
   } = useGame(initialMessage, backendUrl);
 
   const logRef = useRef(null);
@@ -63,14 +64,18 @@ const App = () => {
         </header>
         <main>
           <div className="narrative-log" ref={logRef}>
-            <AnimatedText
-              text={narrative + (animatedSegment ? "\n" + animatedSegment : "")}
-              onComplete={() => {
-                console.debug("[App] AnimatedText (initial) completed.");
-                handleAnimationComplete();
-              }}
-              onProgress={scrollToBottom}
-            />
+            {!initialAnimationDone ? (
+             <AnimatedText
+               text={narrative + (animatedSegment ? "\n" + animatedSegment : "")}
+               onComplete={() => {
+                 console.debug("[App] AnimatedText (initial) completed.");
+                 handleAnimationComplete();
+               }}
+               onProgress={scrollToBottom}
+             />
+           ) : (
+             <div className="static-text">{narrative}</div>
+           )}
           </div>
           <div className="choices-grid" style={{ justifyContent: 'center' }}>
             <AnimatedChoice
