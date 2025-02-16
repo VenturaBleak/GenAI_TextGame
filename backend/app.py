@@ -21,6 +21,7 @@ app.add_middleware(
 
 class BaseNarrativeRequest(BaseModel):
     stage: str
+    language: str  # Now required
 
 class InitialNarrativeRequest(BaseNarrativeRequest):
     stage: Literal['initial'] = 'initial'
@@ -36,8 +37,7 @@ class RoundNarrativeRequest(BaseNarrativeRequest):
 class FinalNarrativeRequest(BaseNarrativeRequest):
     stage: Literal['final'] = 'final'
     narrative_context: str
-    # Use `pattern` instead of `regex` per Pydantic v2
-    win_or_loss: str = Field(..., pattern="^(?i)(win|loss)$")  # Accepts "win" or "loss" (case-insensitive)
+    win_or_loss: str = Field(..., pattern="^(?i)(win|loss)$")  # Accepts "win" or "loss"
 
 # Unified request model as a discriminated union:
 NarrativeRequest = Union[InitialNarrativeRequest, RoundNarrativeRequest, FinalNarrativeRequest]
@@ -81,42 +81,45 @@ def unified_narrative_endpoint(request: NarrativeRequest):
     Unified Narrative Endpoint
 
     This endpoint generates narrative content for three stages:
-      - "initial": No additional parameters.
-      - "round": Requires:
-            • narrative_context (optional; defaults to blank)
-            • action (optional; defaults to blank)
-            • outcome_value (integer)
-            • action_confirming_sentence (optional; defaults to blank)
-      - "final": Requires:
-            • narrative_context (the complete narrative context)
-            • win_or_loss ("win" or "loss", case-insensitive)
+      - "initial": No additional parameters besides language.
+      - "round": Requires narrative_context, action, outcome_value, and action_confirming_sentence.
+      - "final": Requires narrative_context and win_or_loss.
+
+    **Every** request must include the "language" parameter.
     """
     try:
         if request.stage == "initial":
-            # For the "initial" stage, no extra parameters are needed.
-            result = generate_narrative(stage="initial")
+            req: InitialNarrativeRequest = request
+            print(req)
+            result = generate_narrative(
+                stage="initial",
+                language=req.language
+            )
             result["stage"] = "initial"
             return result
 
         elif request.stage == "round":
-            # Type hinting helps here: request is of type RoundNarrativeRequest.
-            req: RoundNarrativeRequest = request  # Cast for clarity.
+            req: RoundNarrativeRequest = request
+            print(req)
             result = generate_narrative(
                 stage="round",
                 narrative_context=req.narrative_context,
                 action=req.action,
                 outcome_value=req.outcome_value,
-                action_confirming_sentence=req.action_confirming_sentence
+                action_confirming_sentence=req.action_confirming_sentence,
+                language=req.language
             )
             result["stage"] = "round"
             return result
 
         elif request.stage == "final":
-            req: FinalNarrativeRequest = request  # Cast for clarity.
+            req: FinalNarrativeRequest = request
+            print(req)
             result = generate_narrative(
                 stage="final",
                 narrative_context=req.narrative_context,
-                win_or_loss=req.win_or_loss
+                win_or_loss=req.win_or_loss,
+                language=req.language
             )
             result["stage"] = "final"
             return result

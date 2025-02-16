@@ -15,39 +15,21 @@ Guardrails:
     - Expects the environment variable GEMINI_API_KEY to be set.
     - Any errors from the underlying client are propagated to the caller.
 """
-
 import os
+# import dotenv
 from google import genai
 
-# Use the API key from the environment (or a fallback value).
-API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY")
-client = genai.Client(api_key=API_KEY)
+# try fetching the API key from the environment
+# if not found, use the fallback value
+# try:
+#     API_KEY = os.environ["GEMINI_API_KEY"]
+# except :
+#     dotenv.load_dotenv()
+#     API_KEY = os.getenv("GEMINI_API_KEY")
 
-# services/gemini_service.py
-"""
-Purpose:
-    Provides a simple wrapper around the Gemini API call, abstracting away
-    the underlying client implementation. This module is responsible for sending
-    prompts to Gemini and returning the response text. Each call starts a new
-    conversation, ensuring no prior chat context is used.
+API_KEY = os.environ["GEMINI_API_KEY"]
 
-Inputs:
-    - prompt (str): The prompt to be sent to Gemini.
-
-Outputs:
-    - A string containing the response from the Gemini API (trimmed of extra whitespace).
-
-Guardrails:
-    - Expects the environment variable GEMINI_API_KEY to be set.
-    - Any errors from the underlying client are propagated to the caller.
-"""
-
-import os
-from google import genai
-
-# Use the API key from the environment (or a fallback value).
-API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY")
-# fallback value is under ./.env
+# Create a new client instance using the API key.
 client = genai.Client(api_key=API_KEY)
 
 def call_gemini(prompt: str) -> str:

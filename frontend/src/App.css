@@ -69,6 +69,24 @@ main {
   margin-bottom: 20px;
 }
 
+.language-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  padding: 10px;
+}
+
+/* App.css */
+.fade-in {
+  opacity: 0;
+  transition: opacity 1.0s ease;
+}
+
+.fade-in.visible {
+  opacity: 1;
+}
+
+
 /* game end panel */
 .game-end-panel {
   display: flex;
